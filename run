@@ -15,6 +15,9 @@ else
   cd spacex-scripts && git pull && cd -
 fi
 
+chmod +x spacex-scripts/run
+chmod +x scripts/run
+
 if [[ spacex-scripts/run -nt scripts/run ]]; then
   echo "Found never version of 'run' in git repository"
   cp spacex-scripts/run .
