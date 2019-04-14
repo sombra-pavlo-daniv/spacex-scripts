@@ -1,0 +1,299 @@
+#!/bin/bash
+
+
+echo hello1tatata
+exit 0
+
+EMAIL_INDEX=0
+PASS_INDEX=1
+AUTH_TOKEN_INDEX=2
+BASE_URL='https://space.sombrainc.com/api'
+
+CONFIG_DIR="$HOME/.space.x/"
+
+CREDENTIALS_KEY_STORE_FILE="$CONFIG_DIR/.space_key_store"
+SPACE_CONFIG_FILE="$CONFIG_DIR/.space_config"
+AUTH_TOKEN=
+KEY_STORE_PASS=
+
+USER_ID=
+
+isAndroid() {
+  [[ "$(uname -a)" = *'Android'* ]] && echo true
+}
+
+check_package_installed() {
+  PACKAGE_NAME=$1
+  ${PACKAGE_NAME} ${3:-"--version"}  &> /dev/null
+  if [[ $? -ne 0 ]]; then
+    if [[ $(isAndroid) ]]; then
+      pkg install $2
+    else
+     sudo apt-get install $2 -y &>/dev/null
+    fi
+  fi
+}
+
+check_package_installed jq jq
+check_package_installed openssl openssl-tool 'help'
+check_package_installed curl curl
+
+checkSessionValid() {
+   [[ $(curl -s -o /dev/null -w "%{http_code}"\
+   --header "Content-Type: application/json, text/plain, */*" \
+   --header "Cookie: JSESSIONID=$AUTH_TOKEN" \
+   "${BASE_URL}/account") = *'200'* ]] && echo true
+}
+
+postRequest() {
+  curl -s \
+    --header "Accept: application/json, text/plain, */*" \
+    --header "Content-Type: application/json;charset=utf-8" \
+    --request POST \
+    --data "$2" \
+    --header "Cookie: JSESSIONID=$AUTH_TOKEN" \
+    "${BASE_URL}${1}"
+}
+
+getRequest() {
+  echo $(curl -s --header "Content-Type: application/json, text/plain, */*" \
+    --header "Cookie: JSESSIONID=$AUTH_TOKEN" \
+    "${BASE_URL}${1}")
+}
+
+initUserId() {
+  local userProfile=$(getRequest "/account")
+  USER_ID=$(echo ${userProfile} | jq -r '.id')
+}
+
+readValue() {
+  READ_VALUE_RESULT=
+  local value
+  echo "$1: " | tr -d '\n'
+
+  local CHECK_MARK="\033[0;32m\xE2\x9C\x94\033[0m"
+  if [[ $2 == pass ]]; then
+    read -s value
+  else
+    read -r value
+  fi
+  echo -e "\\r${CHECK_MARK}\033[K" | tr -d '\d'
+  READ_VALUE_RESULT=${value}
+  value=
+}
+
+clearKeyStore() {
+  rm ${CREDENTIALS_KEY_STORE_FILE} &>/dev/null
+}
+
+storeToConfig() {
+  echo "{\"$1\":\"$2\"}" > ${SPACE_CONFIG_FILE}
+}
+
+storeEncryptedLine() {
+  echo $(encryptLine ${1}) >> ${CREDENTIALS_KEY_STORE_FILE}
+}
+
+encryptLine() {
+  local line=$1
+  if [[ $(isAndroid) ]]; then
+    echo ${line} | openssl enc -aes-128-cbc -pbkdf2 -iter 1000 -a -salt -pass pass:${KEY_STORE_PASS}
+  else
+    echo ${line} | openssl enc -aes-128-cbc -a -salt -pass pass:${KEY_STORE_PASS}
+  fi
+}
+
+decryptLine() {
+if [[ $(isAndroid) ]]; then
+    echo $1 | openssl enc -aes-128-cbc -pbkdf2 -iter 1000 -a -d -salt -pass pass:${2-:${KEY_STORE_PASS}}
+  else
+    echo $1 | openssl enc -aes-128-cbc -a -d -salt -pass pass:${2-:${KEY_STORE_PASS}}
+  fi
+}
+
+openCredentials() {
+  IFS=$'\n' read -d '' -r -a keyStoreLines < ${CREDENTIALS_KEY_STORE_FILE}
+  USER_EMAIL=$(decryptLine "${keyStoreLines[$EMAIL_INDEX]}" "${1}")
+  USER_PASSWORD=$(decryptLine "${keyStoreLines[$PASS_INDEX]}" "${1}")
+  AUTH_TOKEN=$(decryptLine "${keyStoreLines[$AUTH_TOKEN_INDEX]}" "${1}")
+}
+
+useKeyStore() {
+  local userEmail=$1
+  local userPassword=$2
+  readValue "Store credentials for further usage? (y/n)"
+  if [[ ${READ_VALUE_RESULT} == 'y' ]]; then
+    storeToConfig useKeyStore true
+    readValue "Enter KeyStore password " pass
+    KEY_STORE_PASS=${READ_VALUE_RESULT}
+    readValue "Repeat password" pass
+
+    while [[ ${KEY_STORE_PASS} != ${READ_VALUE_RESULT} ]]; do
+      readValue "Passwords don't match, try again" pass
+      KEY_STORE_PASS=${READ_VALUE_RESULT}
+      readValue "Repeat password" pass
+    done
+    storeEncryptedLine ${userEmail}
+    storeEncryptedLine ${userPassword}
+
+  else
+    storeToConfig useKeyStore false
+    echo "Ok, you will be asked to login to space next time too"
+  fi
+}
+
+login() {
+  local askForKeyStore=
+  local email=
+
+  if [[ $1 == "askForKeyStore" ]]; then
+    askForKeyStore=true
+    readValue "Enter your Sombra Space email"
+    email=${READ_VALUE_RESULT}
+  elif [[ -z $1 ]];then
+    readValue "Enter your Sombra Space email"
+    email=${READ_VALUE_RESULT}
+  else
+    email=$1
+  fi
+
+  if [[ ! ${email} = *'sombrainc.com' ]]; then
+    email="$email@sombrainc.com"
+  fi
+
+  local pass=
+  if [[ -z $2 ]]; then
+    readValue "Enter your Sombra Space password" pass
+    pass=${READ_VALUE_RESULT}
+  else
+    pass=$2
+  fi
+
+  if [[ ${askForKeyStore} == true ]]; then
+    useKeyStore ${email} ${pass}
+  fi
+
+  local requestFormData="j_username=$email&j_password=$pass&sombra-space=true&submit=Login"
+  local rawResponse=$(curl --silent --output /dev/null -s \
+    --header "Content-Type: application/x-www-form-urlencoded" \
+    --request POST \
+    --data "$(echo ${requestFormData} | sed 's/@/%40/g')" \
+    --cookie-jar - \
+    "$BASE_URL/authentication" | grep JSESSIONID)
+
+  local auth_token_line=(${rawResponse})
+  local found_jsession=false
+  local cookie_index=0
+
+  for i in "${!auth_token_line[@]}"; do
+    if [[ ${auth_token_line[${i}]} == "JSESSIONID" ]]; then
+      found_jsession=true
+      cookie_index=${i}
+    fi
+  done
+
+  if [[ ${found_jsession} == true ]]; then
+
+    local auth_token=${auth_token_line[$((cookie_index+1))]}
+    AUTH_TOKEN=${auth_token}
+    USER_EMAIL=${email}
+    USER_PASSWORD=${pass}
+    storeEncryptedLine ${auth_token}
+    
+    echo "Hurray, we are in the system :D"
+    initUserId
+
+  else
+    echo "Sorry mate, something went wrong"
+    clearKeyStore
+    exit 1
+  fi
+}
+
+##------------------------------------------------------------------------ actual entry point
+
+if [[ -f ${CREDENTIALS_KEY_STORE_FILE} ]]; then
+  keyStoreLinesCount=$(cat ${CREDENTIALS_KEY_STORE_FILE} | wc -l)
+  if [[ ${keyStoreLinesCount} == 3 ]]; then
+    readValue "Enter KeyStore password" pass
+
+    openCredentials "$READ_VALUE_RESULT"
+    while [[ $? -ne 0 ]]; do
+      readValue "Incorrect password, try again" pass
+      openCredentials "$READ_VALUE_RESULT"
+    done
+      if [[ $(checkSessionValid) ]]; then
+        initUserId
+      else
+        echo "Session expired, logging in again..."
+        clearKeyStore
+        storeEncryptedLine ${USER_EMAIL}
+        storeEncryptedLine ${USER_PASSWORD}
+        login "$USER_EMAIL" "$USER_PASSWORD"
+      fi
+      echo "Session is active"
+  else
+    echo "incorrect lines count"
+  fi
+else
+  if [[ ! -f ${SPACE_CONFIG_FILE} ]]; then
+    touch ${SPACE_CONFIG_FILE}
+    login askForKeyStore
+  else
+    useKeyStore=$(cat ${SPACE_CONFIG_FILE} | jq -r '.useKeyStore')
+    if [[ ${useKeyStore} == false ]]; then
+      login
+    else
+      login askForKeyStore
+    fi
+  fi
+fi
+
+if [[ $? != 0 ]]; then
+  exit $?
+fi
+
+projects=$(getRequest "/project/worked-with-projects/$USER_ID")
+projects=$(echo ${projects} | tr ' ' '_')
+active_pr_filter=$(echo ${projects} | jq -r 'map(select(.projectIsActive==true))')
+project_ids=($(echo ${active_pr_filter} | jq -r '.[].id'))
+active_project_names=($(echo ${active_pr_filter} | jq -r '.[].projectTitle'))
+echo ${project_ids[@]}
+echo "Choose project to log time in"
+echo
+
+for i in "${!active_project_names[@]}"; do
+  if [[ $(isAndroid) ]]; then
+    projectsFormat="  %s | %-32s\n"
+  else
+    projectsFormat="        %5s | %-42s\n"
+  fi
+  printf "$projectsFormat" "$i" "${active_project_names[$i]}"
+done
+echo
+readValue "Chose Project To Log In"
+targetProjectId=${project_ids[$READ_VALUE_RESULT]}
+
+currentDate=$(date +%Y-%m-%dT00:00:00.000Z)
+
+readValue "Enter time spent (Integer in hours)"
+timeSpentHours=${READ_VALUE_RESULT}
+timeSpentMinutes=$(($timeSpentHours*60))
+timeSpentSeconds=$((timeSpentMinutes*60))
+
+readValue "Enter Description" raw
+description=${READ_VALUE_RESULT}
+
+requestData="{
+   \"projectId\"      : $targetProjectId    ,
+   \"hours\"          : $timeSpentHours     ,
+   \"timeSpent\"      : $timeSpentMinutes   ,
+   \"inSeconds\"      : $timeSpentSeconds   ,
+   \"description\"    : \"$description\"    ,
+   \"dateCalendar\"   : \"$currentDate\"    ,
+   \"createdByEmail\" : \"$USER_EMAIL\"     ,
+   \"zoneOffset\"     : 180                 ,
+   \"timeLogType\"    : \"works at project\"
+}"
+
+postRequest "/timeLog" "$requestData" | jq
