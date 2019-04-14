@@ -1,7 +1,7 @@
 #!/bin/bash
 
 
-echo hello1tatata
+echo tets2
 exit 0
 
 EMAIL_INDEX=0
