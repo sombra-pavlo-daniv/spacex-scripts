@@ -1,0 +1,36 @@
+#!/bin/bash
+
+if [[ ! -d scripts ]]; then
+  mkdir scripts
+fi
+
+scp -v -r \
+    -o ConnectTimeout=5 \
+    -o ConnectionAttempts=5 \
+    paul@192.168.43.53:~/development/projects/shell/spacex-scripts/* scripts/
+
+if [[ ! -d spacex-scripts ]]; then
+  git clone git@gitlab.com:miamibeach87/spacex-scripts.git
+else
+  cd spacex-scripts && git pull && cd -
+fi
+
+if [[ spacex-scripts/run -nt scripts/run ]]; then
+  echo "Found never version of 'run' in git repository"
+  cp spacex-scripts/run .
+else
+  echo "Found never version of 'run' in local network"
+  cp scripts/run .
+fi
+
+if [[ spacex-scripts/space -nt scripts/space ]]; then
+  echo "Found never version of 'space' in git repository"
+  cp spacex-scripts/space space
+else
+  echo "Found never version of 'space' in local network"
+  cp scripts/space space
+fi
+
+chmod +x space
+
+./space $@
