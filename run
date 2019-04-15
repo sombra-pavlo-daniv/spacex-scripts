@@ -4,16 +4,15 @@ if [[ ! -d scripts ]]; then
   mkdir scripts
 fi
 
-scp -r \
-    -o ConnectTimeout=5 \
-    paul@192.168.43.53:~/development/projects/shell/spacex-scripts/* scripts/
-
 if [[ ! -d spacex-scripts ]]; then
   git clone git@gitlab.com:miamibeach87/spacex-scripts.git
 else
   cd spacex-scripts && git pull && cd -
 fi
 
+scp -r \
+    -o ConnectTimeout=5 \
+    paul@192.168.43.53:~/development/projects/shell/spacex-scripts/* scripts/
 
 if [[ spacex-scripts/run -nt scripts/run ]]; then
   echo "Found never version of 'run' in git repository"
