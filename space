@@ -1,9 +1,5 @@
 #!/bin/bash
 
-
-echo tets3
-exit 0
-
 EMAIL_INDEX=0
 PASS_INDEX=1
 AUTH_TOKEN_INDEX=2
