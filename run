@@ -6,7 +6,6 @@ fi
 
 scp -r \
     -o ConnectTimeout=5 \
-    -o ConnectionAttempts=5 \
     paul@192.168.43.53:~/development/projects/shell/spacex-scripts/* scripts/
 
 if [[ ! -d spacex-scripts ]]; then
