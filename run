@@ -7,7 +7,7 @@ fi
 if [[ ! -d spacex-scripts ]]; then
   git clone git@gitlab.com:miamibeach87/spacex-scripts.git
 else
-  cd spacex-scripts && git pull && cd -
+  cd spacex-scripts && git pull && cd ..
 fi
 
 scp -r \
