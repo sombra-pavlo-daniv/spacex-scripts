@@ -6,7 +6,7 @@ AUTH_TOKEN_INDEX=2
 BASE_URL='https://space.sombrainc.com/api'
 
 CONFIG_DIR="$HOME/.space.x/"
-
+mkdir "$CONFIG_DIR"
 CREDENTIALS_KEY_STORE_FILE="$CONFIG_DIR/.space_key_store"
 SPACE_CONFIG_FILE="$CONFIG_DIR/.space_config"
 AUTH_TOKEN=
