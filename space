@@ -5,7 +5,7 @@ PASS_INDEX=1
 AUTH_TOKEN_INDEX=2
 BASE_URL='https://space.sombrainc.com/api'
 
-CONFIG_DIR="$HOME/.space.x/"
+CONFIG_DIR="$HOME/.space.x"
 mkdir -p "$CONFIG_DIR"
 CREDENTIALS_KEY_STORE_FILE="$CONFIG_DIR/.space_key_store"
 SPACE_CONFIG_FILE="$CONFIG_DIR/.space_config"
@@ -258,17 +258,32 @@ echo ${project_ids[@]}
 echo "Choose project to log time in"
 echo
 
+if [[ -f ${CONFIG_DIR}/latestProject ]] && [[ $(cat ${CONFIG_DIR}/latestProject) ]]; then
+    targetProjectId=$(cat ${CONFIG_DIR}/latestProject)
+fi
+
 for i in "${!active_project_names[@]}"; do
-  if [[ $(isAndroid) ]]; then
-    projectsFormat="  %s | %-32s\n"
-  else
-    projectsFormat="        %5s | %-42s\n"
-  fi
-  printf "$projectsFormat" "$i" "${active_project_names[$i]}"
+    if [[ $(isAndroid) ]]; then
+        projectsFormat="  %s | %-32s\n"
+    else
+        projectsFormat="        %5s | %-42s\n"
+    fi
+    printf "$projectsFormat" "$i" "${active_project_names[$i]}"
 done
 echo
-readValue "Chose Project To Log In"
-targetProjectId=${project_ids[$READ_VALUE_RESULT]}
+if [[ -z ${targetProjectId} ]]; then
+    readValue "Chose Project To Log In"
+    targetProjectId=${project_ids[$READ_VALUE_RESULT]}
+    echo "$targetProjectId" > ${CONFIG_DIR}/latestProject
+else
+    readValue "Chose Project To Log In [Enter to use last recently used]"
+    if [[ ${READ_VALUE_RESULT} ]]; then
+        targetProjectId=${project_ids[$READ_VALUE_RESULT]}
+        echo "$targetProjectId" > ${CONFIG_DIR}/latestProject
+    fi
+fi
+
+echo "Target project id: $targetProjectId"
 
 currentDate=$(date +%Y-%m-%dT00:00:00.000Z)
 
